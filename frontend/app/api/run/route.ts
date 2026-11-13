@@ -54,6 +54,27 @@ function loadCases() {
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
 
+function sanitizeMessages(input: unknown) {
+  if (!Array.isArray(input)) return [];
+  const out: { role: string; content: string }[] = [];
+  for (const m of input.slice(0, 40)) {
+    const role = String((m as any)?.role ?? "");
+    const content = String((m as any)?.content ?? "");
+    if (!["system", "user", "assistant"].includes(role)) continue;
+    if (!content.trim()) continue;
+    out.push({ role, content: content.slice(0, 20_000) });
+  }
+  return out;
+}
+
+function sanitizeTurns(input: unknown) {
+  if (!Array.isArray(input)) return [];
+  return (input as unknown[])
+    .map((t) => String(t ?? "").slice(0, 20_000))
+    .filter((t) => t.trim())
+    .slice(0, 20);
+}
+
 async function chat(base: string, key: string, model: string, messages: unknown[], maxTokens: number) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 90_000);
@@ -78,17 +99,117 @@ async function chat(base: string, key: string, model: string, messages: unknown[
   }
 }
 
-function sanitizeMessages(input: unknown) {
-  if (!Array.isArray(input)) return [];
-  const out: { role: string; content: string }[] = [];
-  for (const m of input.slice(0, 40)) {
-    const role = String((m as any)?.role ?? "");
-    const content = String((m as any)?.content ?? "");
-    if (!["system", "user", "assistant"].includes(role)) continue;
-    if (!content.trim()) continue;
-    out.push({ role, content: content.slice(0, 20_000) });
+async function upstreamStream(base: string, key: string, model: string, messages: unknown[], maxTokens: number) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 180_000);
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/v1/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.7, stream: true }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok || !res.body) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}: ${t.slice(0, 300)}`);
+    }
+    return res;
+  } finally {
+    clearTimeout(timer);
   }
-  return out;
+}
+
+type Emit = (obj: Record<string, unknown>) => void;
+
+async function pump(res: Response, emit: Emit, turn?: number) {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let content = "";
+  let reasoning = "";
+  let finish: string | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      for (const line of chunk.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+          const j = JSON.parse(data);
+          const choice = j?.choices?.[0] ?? {};
+          const d = choice.delta ?? {};
+          if (choice.finish_reason) finish = choice.finish_reason;
+          if (d.reasoning_content) {
+            reasoning += d.reasoning_content;
+            emit({ type: "reasoning", text: d.reasoning_content, turn });
+          }
+          if (d.content) {
+            content += d.content;
+            emit({ type: "delta", text: d.content, turn });
+          }
+        } catch {
+          // ignore malformed chunk
+        }
+      }
+    }
+  }
+  return { content, reasoning, finish };
+}
+
+function sse(streamFn: (emit: Emit) => Promise<void>): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    async start(controller) {
+      const emit: Emit = (obj) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      try {
+        await streamFn(emit);
+      } catch (e) {
+        emit({ type: "error", error: String(e).slice(0, 400) });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(body, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    },
+  });
+}
+
+function streamSingle(base: string, key: string, model: string, msgs: unknown[], started: number) {
+  return sse(async (emit) => {
+    emit({ type: "start", kind: "single" });
+    const res = await upstreamStream(base, key, model, msgs, 1800);
+    const out = await pump(res, emit);
+    emit({ type: "done", finish: out.finish, elapsedMs: Date.now() - started });
+  });
+}
+
+function streamTurns(base: string, key: string, model: string, ts: string[], started: number) {
+  return sse(async (emit) => {
+    emit({ type: "start", kind: "multi", total: ts.length });
+    const history: { role: string; content: string }[] = [];
+    for (let i = 0; i < ts.length; i += 1) {
+      emit({ type: "turn_start", turn: i });
+      history.push({ role: "user", content: ts[i] });
+      const res = await upstreamStream(base, key, model, history, 1600);
+      const out = await pump(res, emit, i);
+      emit({ type: "turn_done", turn: i, finish: out.finish });
+      history.push({ role: "assistant", content: out.content || out.reasoning });
+    }
+    emit({ type: "done", elapsedMs: Date.now() - started });
+  });
 }
 
 export async function POST(req: Request) {
@@ -117,34 +238,43 @@ export async function POST(req: Request) {
     }
 
     const started = Date.now();
+    const wantStream = Boolean(body?.stream);
+    let kind: "single" | "multi" = "single";
+    let msgs: { role: string; content: string }[] = [];
+    let ts: string[] = [];
 
-    // Inline edited messages: single completion with arbitrary history.
     if (Array.isArray(body?.messages)) {
-      const msgs = sanitizeMessages(body.messages);
+      msgs = sanitizeMessages(body.messages);
       if (!msgs.length) return NextResponse.json({ error: "messages is empty" }, { status: 400 });
       if (msgs[msgs.length - 1].role !== "user") {
         msgs.push({ role: "user", content: "请继续。" });
       }
-      let r = await chat(base, key, model, msgs, 1800);
-      if (!r.text && r.finish === "length") r = await chat(base, key, model, msgs, 5000);
-      return NextResponse.json({
-        model,
-        caseId: null,
-        kind: "single",
-        text: r.text,
-        reasoning: r.reasoning.slice(0, 2000),
-        finish: r.finish,
-        elapsedMs: Date.now() - started,
-      });
+    } else if (Array.isArray(body?.turns)) {
+      ts = sanitizeTurns(body.turns);
+      if (!ts.length) return NextResponse.json({ error: "turns is empty" }, { status: 400 });
+      kind = "multi";
+    } else {
+      const caseId = String(body?.caseId || "");
+      const store = loadCases();
+      const item = store?.cases?.find((c: { id: string }) => c.id === caseId);
+      if (!item) {
+        return NextResponse.json({ error: `case not found: ${caseId}` }, { status: 404 });
+      }
+      if (item.kind === "multi") {
+        ts = sanitizeTurns(item.turns);
+        kind = "multi";
+      } else {
+        msgs = sanitizeMessages(item.messages);
+      }
     }
 
-    // Inline edited multi-turn ladder: run each turn sequentially.
-    if (Array.isArray(body?.turns)) {
-      const ts = (body.turns as unknown[])
-        .map((t) => String(t ?? "").slice(0, 20_000))
-        .filter((t) => t.trim())
-        .slice(0, 20);
-      if (!ts.length) return NextResponse.json({ error: "turns is empty" }, { status: 400 });
+    if (wantStream) {
+      return kind === "multi"
+        ? streamTurns(base, key, model, ts, started)
+        : streamSingle(base, key, model, msgs, started);
+    }
+
+    if (kind === "multi") {
       const history: { role: string; content: string }[] = [];
       const turns: { assistant: string; finish: string | null }[] = [];
       for (const msg of ts) {
@@ -157,31 +287,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ model, caseId: null, kind: "multi", turns, elapsedMs: Date.now() - started });
     }
 
-    const caseId = String(body?.caseId || "");
-    const store = loadCases();
-    const item = store?.cases?.find((c: { id: string }) => c.id === caseId);
-    if (!item) {
-      return NextResponse.json({ error: `case not found: ${caseId}` }, { status: 404 });
-    }
-
-    if (item.kind === "multi") {
-      const history: { role: string; content: string }[] = [];
-      const turns: { assistant: string; finish: string | null }[] = [];
-      for (const msg of item.turns as string[]) {
-        history.push({ role: "user", content: msg });
-        let r = await chat(base, key, model, history, 1600);
-        if (!r.text && r.finish === "length") r = await chat(base, key, model, history, 5000);
-        turns.push({ assistant: r.text, finish: r.finish });
-        history.push({ role: "assistant", content: r.text });
-      }
-      return NextResponse.json({ model, caseId, kind: "multi", turns, elapsedMs: Date.now() - started });
-    }
-
-    let r = await chat(base, key, model, item.messages, 1800);
-    if (!r.text && r.finish === "length") r = await chat(base, key, model, item.messages, 5000);
+    let r = await chat(base, key, model, msgs, 1800);
+    if (!r.text && r.finish === "length") r = await chat(base, key, model, msgs, 5000);
     return NextResponse.json({
       model,
-      caseId,
+      caseId: null,
       kind: "single",
       text: r.text,
       reasoning: r.reasoning.slice(0, 2000),

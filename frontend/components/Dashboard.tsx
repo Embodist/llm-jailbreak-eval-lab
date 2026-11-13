@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -12,6 +12,7 @@ import {
   Divider,
   Drawer,
   FormControl,
+  FormControlLabel,
   IconButton,
   InputLabel,
   List,
@@ -22,6 +23,7 @@ import {
   Paper,
   Select,
   Snackbar,
+  Switch,
   Tab,
   Table,
   TableBody,
@@ -1211,6 +1213,8 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [snack, setSnack] = useState("");
+  const [stream, setStream] = useState(true);
+  const abortRef = useRef<AbortController | null>(null);
 
   const [mode, setMode] = useState<"structured" | "json">("structured");
   const [system, setSystem] = useState("");
@@ -1313,18 +1317,86 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
     if (!selected) return;
     setRunning(true);
     setResult(null);
+    const payload = buildPayload();
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      const payload = buildPayload();
-      const r = await fetch("/api/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      setResult(await r.json());
-    } catch (e) {
-      setResult({ error: `请求失败：${String(e)}` });
+      if (stream) {
+        const r = await fetch("/api/run", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...payload, stream: true }),
+          signal: controller.signal,
+        });
+        if (!r.ok || !r.body) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.error || `HTTP ${r.status}`);
+        }
+        const started = Date.now();
+        const acc: any = payload.turns
+          ? {
+              kind: "multi",
+              turns: (payload.turns as string[]).map(() => ({ assistant: "", reasoning: "", finish: null })),
+              elapsedMs: 0,
+            }
+          : { kind: "single", text: "", reasoning: "", finish: null, elapsedMs: 0 };
+        setResult(acc);
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buf.indexOf("\n\n")) >= 0) {
+            const chunk = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            for (const line of chunk.split("\n")) {
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data) continue;
+              let ev: any;
+              try {
+                ev = JSON.parse(data);
+              } catch {
+                continue;
+              }
+              if (ev.type === "delta") {
+                if (acc.kind === "multi") acc.turns[ev.turn].assistant += ev.text;
+                else acc.text += ev.text;
+              } else if (ev.type === "reasoning") {
+                if (acc.kind === "multi") acc.turns[ev.turn].reasoning += ev.text;
+                else acc.reasoning += ev.text;
+              } else if (ev.type === "turn_done") {
+                if (acc.kind === "multi") acc.turns[ev.turn].finish = ev.finish;
+              } else if (ev.type === "done") {
+                acc.finish = ev.finish;
+                acc.elapsedMs = ev.elapsedMs ?? Date.now() - started;
+              } else if (ev.type === "error") {
+                acc.error = ev.error;
+              }
+              setResult(
+                acc.kind === "multi"
+                  ? { ...acc, turns: acc.turns.map((t: any) => ({ ...t })) }
+                  : { ...acc }
+              );
+            }
+          }
+        }
+      } else {
+        const r = await fetch("/api/run", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        setResult(await r.json());
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") setResult({ error: `请求失败：${String(e.message || e)}` });
     } finally {
       setRunning(false);
+      abortRef.current = null;
     }
   };
 
@@ -1520,6 +1592,16 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
                   <Button variant="contained" size="small" startIcon={<PlayArrowIcon />} onClick={send} disabled={running}>
                     {running ? "发送中…" : "发送 / 重发送"}
                   </Button>
+                  <FormControlLabel
+                    control={<Switch size="small" checked={stream} onChange={(e) => setStream(e.target.checked)} />}
+                    label={<Typography variant="caption">流式</Typography>}
+                    sx={{ ml: 0.5 }}
+                  />
+                  {running && stream && (
+                    <Button size="small" color="warning" onClick={() => abortRef.current?.abort()}>
+                      停止
+                    </Button>
+                  )}
                   <Button size="small" onClick={reset} disabled={!dirty}>重置</Button>
                   <Button size="small" startIcon={<ContentCopyIcon />} onClick={() => { try { copy(JSON.stringify(buildPayload(), null, 2)); } catch { setSnack("JSON 解析失败"); } }}>
                     复制请求 JSON
@@ -1539,6 +1621,9 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
                 </Stack>
 
                 {running && <CircularProgress size={20} />}
+                {running && stream && (
+                  <Typography variant="caption" color="text.secondary">流式接收中…</Typography>
+                )}
                 {result?.error && <Alert severity="error">{result.error}</Alert>}
                 {result && !result.error && (
                   <Box>
@@ -1550,11 +1635,21 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
                     {result.kind === "multi" ? (
                       <Stack spacing={1}>
                         {(result.turns ?? []).map((t: any, i: number) => (
-                          <PromptBlock key={i} label={`turn ${i + 1} · ${t.finish ?? ""}`} text={t.assistant ?? ""} onCopy={copy} />
+                          <Stack key={i} spacing={0.6}>
+                            {t.reasoning && (
+                              <PromptBlock label={`turn ${i + 1} reasoning`} text={t.reasoning} onCopy={copy} />
+                            )}
+                            <PromptBlock label={`turn ${i + 1} · ${t.finish ?? ""}`} text={t.assistant || "(empty)"} onCopy={copy} />
+                          </Stack>
                         ))}
                       </Stack>
                     ) : (
-                      <PromptBlock label="assistant" text={result.text || result.reasoning || "(empty)"} onCopy={copy} />
+                      <Stack spacing={1}>
+                        {result.reasoning && (
+                          <PromptBlock label="reasoning" text={result.reasoning} onCopy={copy} />
+                        )}
+                        <PromptBlock label="assistant" text={result.text || "(empty)"} onCopy={copy} />
+                      </Stack>
                     )}
                   </Box>
                 )}

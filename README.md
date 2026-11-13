@@ -22,6 +22,7 @@
 - [15 看板 UI 指南](docs/15-ui-guide.md)
 - [16 术语表](docs/16-glossary.md)
 - [17 FAQ](docs/17-faq.md)
+- [18 API 与 curl 手册](docs/18-api.md)
 - [文档索引 docs/README](docs/README.md)
 
 ## 目录
