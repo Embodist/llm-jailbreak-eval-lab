@@ -56,7 +56,7 @@ python3 scripts/export_frontend_data.py     # 生成 frontend/data/results.json
 cd frontend && npm install && npm run dev   # http://localhost:3210
 ```
 
-7 个页签：概览、焦点模型、模型、手法、数据集、多轮、方法。支持家族筛选、模型搜索、排序、点击下钻（模型/手法明细）、导出 JSON/CSV。详见 [15 UI 指南](docs/15-ui-guide.md)。
+左侧多级菜单：总览（概览、焦点模型）、评测（模型、手法、多轮）、复现（案例库）、数据（数据集）、方法（方法与边界）。支持筛选、搜索、排序、点击下钻、导出 JSON/CSV；复现页可编辑 system/user/prefill/turns 或 messages JSON 并直接发送/重发送。详见 [15 UI 指南](docs/15-ui-guide.md)。
 
 ## 边界
 

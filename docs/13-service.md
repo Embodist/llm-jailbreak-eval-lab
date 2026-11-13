@@ -89,9 +89,9 @@ python3 scripts/export_frontend_data.py
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/cases` | 返回案例库（id、手法、system/prompt/prefill、多轮 turns、hook 说明） |
-| POST | `/api/run` | `{model, caseId}`；单轮返回 `{text, finish, elapsedMs}`，多轮返回 `{turns}` |
+| POST | `/api/run` | `{model, caseId}` 或 `{model, messages}` 或 `{model, turns}`；单轮返回 `{text, finish, elapsedMs}`，多轮返回 `{turns}` |
 
-`/api/run` 从 `process.env` 或 `../.env` 读取 `LLM_BASE_URL` / `LLM_API_KEY`；若设置了 `DASHBOARD_RUN_TOKEN`，请求需带 `x-run-token`。
+`/api/run` 从 `process.env` 或 `../.env` 读取 `LLM_BASE_URL` / `LLM_API_KEY`；若设置了 `DASHBOARD_RUN_TOKEN`，请求需带 `x-run-token`。内联 `messages` 支持任意编辑后的历史；若最后一条是 `assistant`，服务端追加“请继续。”后发送。
 
 ## 6. 扩展
 

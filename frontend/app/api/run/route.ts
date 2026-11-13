@@ -78,6 +78,19 @@ async function chat(base: string, key: string, model: string, messages: unknown[
   }
 }
 
+function sanitizeMessages(input: unknown) {
+  if (!Array.isArray(input)) return [];
+  const out: { role: string; content: string }[] = [];
+  for (const m of input.slice(0, 40)) {
+    const role = String((m as any)?.role ?? "");
+    const content = String((m as any)?.content ?? "");
+    if (!["system", "user", "assistant"].includes(role)) continue;
+    if (!content.trim()) continue;
+    out.push({ role, content: content.slice(0, 20_000) });
+  }
+  return out;
+}
+
 export async function POST(req: Request) {
   try {
     const env = loadEnv();
@@ -99,18 +112,58 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const model = String(body?.model || "");
-    const caseId = String(body?.caseId || "");
     if (!MODELS.has(model)) {
       return NextResponse.json({ error: `model not allowed: ${model}` }, { status: 400 });
     }
 
+    const started = Date.now();
+
+    // Inline edited messages: single completion with arbitrary history.
+    if (Array.isArray(body?.messages)) {
+      const msgs = sanitizeMessages(body.messages);
+      if (!msgs.length) return NextResponse.json({ error: "messages is empty" }, { status: 400 });
+      if (msgs[msgs.length - 1].role !== "user") {
+        msgs.push({ role: "user", content: "请继续。" });
+      }
+      let r = await chat(base, key, model, msgs, 1800);
+      if (!r.text && r.finish === "length") r = await chat(base, key, model, msgs, 5000);
+      return NextResponse.json({
+        model,
+        caseId: null,
+        kind: "single",
+        text: r.text,
+        reasoning: r.reasoning.slice(0, 2000),
+        finish: r.finish,
+        elapsedMs: Date.now() - started,
+      });
+    }
+
+    // Inline edited multi-turn ladder: run each turn sequentially.
+    if (Array.isArray(body?.turns)) {
+      const ts = (body.turns as unknown[])
+        .map((t) => String(t ?? "").slice(0, 20_000))
+        .filter((t) => t.trim())
+        .slice(0, 20);
+      if (!ts.length) return NextResponse.json({ error: "turns is empty" }, { status: 400 });
+      const history: { role: string; content: string }[] = [];
+      const turns: { assistant: string; finish: string | null }[] = [];
+      for (const msg of ts) {
+        history.push({ role: "user", content: msg });
+        let r = await chat(base, key, model, history, 1600);
+        if (!r.text && r.finish === "length") r = await chat(base, key, model, history, 5000);
+        turns.push({ assistant: r.text, finish: r.finish });
+        history.push({ role: "assistant", content: r.text });
+      }
+      return NextResponse.json({ model, caseId: null, kind: "multi", turns, elapsedMs: Date.now() - started });
+    }
+
+    const caseId = String(body?.caseId || "");
     const store = loadCases();
     const item = store?.cases?.find((c: { id: string }) => c.id === caseId);
     if (!item) {
       return NextResponse.json({ error: `case not found: ${caseId}` }, { status: 404 });
     }
 
-    const started = Date.now();
     if (item.kind === "multi") {
       const history: { role: string; content: string }[] = [];
       const turns: { assistant: string; finish: string | null }[] = [];

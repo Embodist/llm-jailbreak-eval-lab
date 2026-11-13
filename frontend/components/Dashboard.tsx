@@ -7,12 +7,17 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Collapse,
   Container,
   Divider,
   Drawer,
   FormControl,
   IconButton,
   InputLabel,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
   MenuItem,
   Paper,
   Select,
@@ -37,6 +42,19 @@ import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
+import MenuIcon from "@mui/icons-material/Menu";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import SpaceDashboardOutlinedIcon from "@mui/icons-material/SpaceDashboardOutlined";
+import TrackChangesOutlinedIcon from "@mui/icons-material/TrackChangesOutlined";
+import DevicesOutlinedIcon from "@mui/icons-material/DevicesOutlined";
+import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
+import ForumOutlinedIcon from "@mui/icons-material/ForumOutlined";
+import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutlined";
+import StorageOutlinedIcon from "@mui/icons-material/StorageOutlined";
+import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
 import type {
   CaseItem,
   CasesResponse,
@@ -76,6 +94,46 @@ const RISK_COLOR: Record<string, string> = {
 };
 
 const FAMILIES = ["全部", "DeepSeek", "Gemini", "NVIDIA", "Poolside"];
+
+const NAV: { group: string; items: { key: string; label: string; hint: string; icon: any }[] }[] = [
+  {
+    group: "总览",
+    items: [
+      { key: "overview", label: "概览", hint: "KPI 与总览", icon: SpaceDashboardOutlinedIcon },
+      { key: "focus", label: "焦点模型", hint: "deepseek-flash", icon: TrackChangesOutlinedIcon },
+    ],
+  },
+  {
+    group: "评测",
+    items: [
+      { key: "models", label: "模型", hint: "总表与下钻", icon: DevicesOutlinedIcon },
+      { key: "techniques", label: "手法", hint: "跨模型分布", icon: ScienceOutlinedIcon },
+      { key: "multi", label: "多轮", hint: "上下文漂移", icon: ForumOutlinedIcon },
+    ],
+  },
+  {
+    group: "复现",
+    items: [
+      { key: "repro", label: "复现案例库", hint: "编辑并发送", icon: PlayCircleOutlineIcon },
+    ],
+  },
+  {
+    group: "数据",
+    items: [
+      { key: "dataset", label: "数据集", hint: "覆盖与校验", icon: StorageOutlinedIcon },
+    ],
+  },
+  {
+    group: "方法",
+    items: [
+      { key: "method", label: "方法与边界", hint: "口径与局限", icon: MenuBookOutlinedIcon },
+    ],
+  },
+];
+
+const SECTION_TITLE: Record<string, string> = Object.fromEntries(
+  NAV.flatMap((g) => g.items.map((i) => [i.key, i.label]))
+);
 
 function pct(v: number | null) {
   return v === null || v === undefined ? "—" : `${v.toFixed(0)}%`;
@@ -377,7 +435,11 @@ function modelCsv(rows: ModelRow[]) {
 
 export default function Dashboard({ data }: { data: Results }) {
   const { meta, models, techniques, heatmap, scale, multi, blocked, master, focus, dataset } = data;
-  const [tab, setTab] = useState(0);
+  const [section, setSection] = useState("overview");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    总览: true, 评测: true, 复现: true, 数据: true, 方法: true,
+  });
   const [family, setFamily] = useState("全部");
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<"rate" | "C" | "A" | "name">("rate");
@@ -407,62 +469,60 @@ export default function Dashboard({ data }: { data: Results }) {
   const modelIndex = detail ? heatmap.models.indexOf(detail.id) : -1;
 
   return (
-    <Box sx={{ minHeight: "100vh", pb: 8 }}>
+    <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <Box
+        component="nav"
         sx={{
+          display: { xs: "none", md: "block" },
+          width: 272,
+          flexShrink: 0,
           position: "sticky",
           top: 0,
-          zIndex: 20,
-          borderBottom: "1px solid rgba(255,255,255,0.07)",
-          backdropFilter: "blur(12px)",
-          backgroundColor: "rgba(10,14,23,0.85)",
-          background:
-            "radial-gradient(1200px 400px at 10% -20%, rgba(124,92,255,0.22), transparent), radial-gradient(900px 300px at 90% -30%, rgba(34,211,238,0.16), transparent)",
+          height: "100vh",
+          borderRight: "1px solid rgba(255,255,255,0.07)",
+          bgcolor: "#0b111c",
+          overflowY: "auto",
         }}
       >
-        <Container maxWidth="xl" sx={{ pt: { xs: 3, md: 5 } }}>
-          <Stack direction="row" spacing={1.2} alignItems="center" flexWrap="wrap">
-            <ShieldOutlinedIcon sx={{ color: "primary.main", fontSize: 34 }} />
-            <Typography variant="h4">破甲评测看板</Typography>
-            <Chip label="red-team / safety eval" size="small" variant="outlined" />
-            <Box sx={{ flex: 1 }} />
-            <Button
-              size="small"
-              startIcon={<DownloadIcon />}
-              onClick={() => {
-                download("results.json", JSON.stringify(data, null, 2));
-                setSnack("已导出 results.json");
-              }}
-            >
-              导出 JSON
-            </Button>
-          </Stack>
-          <Typography variant="body1" color="text.secondary" sx={{ mt: 1, maxWidth: 900 }}>
-            固定目标、逐类换包装，对比各模型族的配合率、手法差异、多轮漂移与题材覆盖。
-            配合 = 标注为 C（可操作内容）；拒绝 = A；部分 = B。
-          </Typography>
-          <Stack direction="row" spacing={1} sx={{ mt: 2 }} flexWrap="wrap" useFlexGap>
-            <Chip size="small" label={`${meta.models} 个模型`} />
-            <Chip size="small" label={`${meta.attackProbes} 条攻击探针`} />
-            <Chip size="small" label={`${meta.multiScenarios} 个多轮场景`} />
-            <Chip size="small" label={`生成于 ${new Date(data.generatedAt).toLocaleString()}`} variant="outlined" />
-          </Stack>
-          <Tabs
-            value={tab}
-            onChange={(_, v) => setTab(v)}
-            variant="scrollable"
-            allowScrollButtonsMobile
-            sx={{ mt: 2, minHeight: 40 }}
-          >
-            {["概览", "焦点模型", "模型", "手法", "复现", "数据集", "多轮", "方法"].map((t) => (
-              <Tab key={t} label={t} sx={{ minHeight: 40 }} />
-            ))}
-          </Tabs>
-        </Container>
+        <Sidebar
+          section={section}
+          openGroups={openGroups}
+          onToggle={(g) => setOpenGroups((s) => ({ ...s, [g]: !s[g] }))}
+          onSelect={(s) => setSection(s)}
+        />
       </Box>
 
-      <Container maxWidth="xl" sx={{ mt: 3 }}>
-        {tab === 0 && (
+      <Drawer
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        slotProps={{ paper: { sx: { width: 288, bgcolor: "#0b111c" } } }}
+      >
+        <Sidebar
+          section={section}
+          openGroups={openGroups}
+          onToggle={(g) => setOpenGroups((s) => ({ ...s, [g]: !s[g] }))}
+          onSelect={(s) => {
+            setSection(s);
+            setMobileOpen(false);
+          }}
+        />
+      </Drawer>
+
+      <Box sx={{ flex: 1, minWidth: 0, pb: 6 }}>
+        <TopBar
+          title={SECTION_TITLE[section] ?? "概览"}
+          generatedAt={data.generatedAt}
+          modelCount={meta.models}
+          probeCount={meta.attackProbes}
+          onMenu={() => setMobileOpen(true)}
+          onExport={() => {
+            download("results.json", JSON.stringify(data, null, 2));
+            setSnack("已导出 results.json");
+          }}
+        />
+
+        <Container maxWidth="xl" sx={{ mt: 3 }}>
+        {section === "overview" && (
           <>
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(5, 1fr)" }, gap: 2 }}>
               <Kpi label="测试模型" value={String(models.length)} sub="glm 上游 404" />
@@ -474,7 +534,7 @@ export default function Dashboard({ data }: { data: Results }) {
 
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 2, mt: 2 }}>
               <Section title="各模型配合率" hint="点击条目查看下钻；右上可筛选/排序。" action={
-                <Button size="small" onClick={() => setTab(2)}>下钻</Button>
+                <Button size="small" onClick={() => setSection("models")}>下钻</Button>
               }>
                 <Stack spacing={1.1}>
                   {models.map((m) => (
@@ -528,11 +588,11 @@ export default function Dashboard({ data }: { data: Results }) {
           </>
         )}
 
-        {tab === 1 && (
+        {section === "focus" && (
           <FocusPanel focus={focus} />
         )}
 
-        {tab === 2 && (
+        {section === "models" && (
           <Section
             title="模型总表"
             hint="筛选、搜索、排序；点击行查看该模型的逐手法与多轮明细。"
@@ -608,7 +668,7 @@ export default function Dashboard({ data }: { data: Results }) {
           </Section>
         )}
 
-        {tab === 3 && (
+        {section === "techniques" && (
           <Section title="手法总表" hint="跨模型聚合；点击行查看该手法在各模型上的分布。">
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1fr" }, gap: 2 }}>
               <Stack spacing={1}>
@@ -646,14 +706,15 @@ export default function Dashboard({ data }: { data: Results }) {
           </Section>
         )}
 
-        {tab === 4 && <ReproPanel models={models} />}
+        {section === "repro" && <ReproPanel models={models} />}
 
-        {tab === 5 && <DatasetPanel dataset={dataset} />}
+        {section === "dataset" && <DatasetPanel dataset={dataset} />}
 
-        {tab === 6 && <MultiPanel multi={multi} models={models} />}
+        {section === "multi" && <MultiPanel multi={multi} models={models} />}
 
-        {tab === 7 && <MethodPanel master={master} focus={focus} />}
-      </Container>
+        {section === "method" && <MethodPanel master={master} focus={focus} />}
+        </Container>
+      </Box>
 
       <Drawer anchor="right" open={!!detail} onClose={() => setDetail(null)} slotProps={{ paper: { sx: { width: { xs: "100%", sm: 520 }, p: 3 } } }}>
         {detail && (
@@ -718,6 +779,150 @@ export default function Dashboard({ data }: { data: Results }) {
       </Drawer>
 
       <Snackbar open={!!snack} autoHideDuration={2200} onClose={() => setSnack("")} message={snack} />
+    </Box>
+  );
+}
+
+function Sidebar({
+  section,
+  openGroups,
+  onToggle,
+  onSelect,
+}: {
+  section: string;
+  openGroups: Record<string, boolean>;
+  onToggle: (g: string) => void;
+  onSelect: (s: string) => void;
+}) {
+  return (
+    <Box sx={{ p: 1.2 }}>
+      <Stack direction="row" spacing={1.2} alignItems="center" sx={{ px: 1.2, py: 1.8 }}>
+        <ShieldOutlinedIcon sx={{ color: "primary.main", fontSize: 32 }} />
+        <Box>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+            破甲评测看板
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            red-team / safety eval
+          </Typography>
+        </Box>
+      </Stack>
+      <Divider sx={{ mb: 1 }} />
+
+      {NAV.map((group) => {
+        const open = openGroups[group.group] !== false;
+        return (
+          <Box key={group.group} sx={{ mb: 0.4 }}>
+            <ListItemButton
+              onClick={() => onToggle(group.group)}
+              sx={{ borderRadius: 2, minHeight: 34, py: 0.2 }}
+            >
+              <ListItemText
+                primary={
+                  <Typography variant="overline" sx={{ color: "text.secondary", letterSpacing: "0.12em" }}>
+                    {group.group}
+                  </Typography>
+                }
+              />
+              {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+            </ListItemButton>
+            <Collapse in={open} timeout="auto" unmountOnExit>
+              <List dense disablePadding>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = section === item.key;
+                  return (
+                    <ListItemButton
+                      key={item.key}
+                      selected={active}
+                      onClick={() => onSelect(item.key)}
+                      sx={{
+                        borderRadius: 2,
+                        mx: 0.5,
+                        my: 0.2,
+                        minHeight: 40,
+                        "&.Mui-selected": {
+                          bgcolor: "rgba(124,92,255,0.16)",
+                          color: "#c4b5fd",
+                        },
+                        "&.Mui-selected:hover": { bgcolor: "rgba(124,92,255,0.24)" },
+                      }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 34, color: "inherit" }}>
+                        <Icon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
+                          <Typography sx={{ fontSize: 14, fontWeight: active ? 650 : 500 }}>
+                            {item.label}
+                          </Typography>
+                        }
+                        secondary={
+                          <Typography sx={{ fontSize: 11, color: "text.secondary" }}>
+                            {item.hint}
+                          </Typography>
+                        }
+                      />
+                    </ListItemButton>
+                  );
+                })}
+              </List>
+            </Collapse>
+          </Box>
+        );
+      })}
+
+      <Divider sx={{ my: 1.5 }} />
+      <Typography variant="caption" color="text.secondary" sx={{ px: 1.2, display: "block", lineHeight: 1.5 }}>
+        本地红队评测工具。原始语料与模型回复不进入前端包。
+      </Typography>
+    </Box>
+  );
+}
+
+function TopBar({
+  title,
+  generatedAt,
+  modelCount,
+  probeCount,
+  onMenu,
+  onExport,
+}: {
+  title: string;
+  generatedAt: string;
+  modelCount: number;
+  probeCount: number;
+  onMenu: () => void;
+  onExport: () => void;
+}) {
+  return (
+    <Box
+      sx={{
+        position: "sticky",
+        top: 0,
+        zIndex: 20,
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        backdropFilter: "blur(12px)",
+        backgroundColor: "rgba(10,14,23,0.86)",
+        px: { xs: 2, md: 4 },
+        py: 1.4,
+      }}
+    >
+      <Stack direction="row" spacing={1.2} alignItems="center">
+        <IconButton onClick={onMenu} sx={{ display: { xs: "inline-flex", md: "none" } }}>
+          <MenuIcon />
+        </IconButton>
+        <Typography variant="h6">{title}</Typography>
+        <Chip size="small" label={`${modelCount} 模型`} />
+        <Chip size="small" label={`${probeCount} 探针`} variant="outlined" />
+        <Box sx={{ flex: 1 }} />
+        <Typography variant="caption" color="text.secondary" sx={{ display: { xs: "none", sm: "block" } }}>
+          生成于 {new Date(generatedAt).toLocaleString()}
+        </Typography>
+        <Button size="small" startIcon={<DownloadIcon />} onClick={onExport}>
+          导出 JSON
+        </Button>
+      </Stack>
     </Box>
   );
 }
@@ -954,6 +1159,46 @@ function PromptBlock({ label, text, onCopy }: { label: string; text: string; onC
   );
 }
 
+
+function EditableBlock({
+  label,
+  value,
+  onChange,
+  minRows = 2,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  minRows?: number;
+  mono?: boolean;
+}) {
+  return (
+    <Box sx={{ mt: 0.8 }}>
+      <Stack direction="row" justifyContent="space-between">
+        <Typography variant="caption" color="text.secondary">{label}</Typography>
+        <Typography variant="caption" color="text.secondary">{value.length} 字</Typography>
+      </Stack>
+      <TextField
+        fullWidth
+        multiline
+        minRows={minRows}
+        maxRows={10}
+        size="small"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        sx={{ mt: 0.4, "& textarea": { fontFamily: mono ? "monospace" : "inherit", fontSize: 12 } }}
+      />
+    </Box>
+  );
+}
+
+function initialJson(c: CaseItem) {
+  return c.kind === "multi"
+    ? JSON.stringify(c.turns ?? [], null, 2)
+    : JSON.stringify(c.messages ?? [], null, 2);
+}
+
 function ReproPanel({ models }: { models: ModelRow[] }) {
   const [data, setData] = useState<CasesResponse | null>(null);
   const [err, setErr] = useState("");
@@ -966,6 +1211,13 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [snack, setSnack] = useState("");
+
+  const [mode, setMode] = useState<"structured" | "json">("structured");
+  const [system, setSystem] = useState("");
+  const [user, setUser] = useState("");
+  const [prefill, setPrefill] = useState("");
+  const [turns, setTurns] = useState<string[]>([]);
+  const [jsonText, setJsonText] = useState("");
 
   const load = () => {
     setLoading(true);
@@ -997,6 +1249,32 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
       .slice(0, 300);
   }, [data, tech, kind, q]);
 
+  const pick = (c: CaseItem) => {
+    setSelected(c);
+    setSystem(c.prompts.system ?? "");
+    setUser(c.prompts.prompt ?? "");
+    setPrefill(c.prompts.prefill ?? "");
+    setTurns(c.turns ?? []);
+    setJsonText(initialJson(c));
+    setMode("structured");
+    setResult(null);
+  };
+
+  const reset = () => {
+    if (selected) pick(selected);
+  };
+
+  const dirty = useMemo(() => {
+    if (!selected) return false;
+    if (mode === "json") return jsonText !== initialJson(selected);
+    if (selected.kind === "multi") return JSON.stringify(turns) !== JSON.stringify(selected.turns ?? []);
+    return (
+      system !== (selected.prompts.system ?? "") ||
+      user !== (selected.prompts.prompt ?? "") ||
+      prefill !== (selected.prompts.prefill ?? "")
+    );
+  }, [selected, mode, jsonText, system, user, prefill, turns]);
+
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -1006,22 +1284,76 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
     }
   };
 
-  const run = async () => {
+  const currentMessages = () => {
+    const msgs: { role: string; content: string }[] = [];
+    if (system.trim()) msgs.push({ role: "system", content: system });
+    msgs.push({ role: "user", content: user });
+    if (prefill.trim()) msgs.push({ role: "assistant", content: prefill });
+    return msgs;
+  };
+
+  const buildPayload = () => {
+    if (!selected) return null;
+    const payload: any = { model: runModel };
+    if (mode === "json") {
+      const parsed = JSON.parse(jsonText);
+      if (selected.kind === "multi") payload.turns = parsed;
+      else payload.messages = parsed;
+      return payload;
+    }
+    if (selected.kind === "multi") {
+      payload.turns = turns.filter((t) => t.trim());
+      return payload;
+    }
+    payload.messages = currentMessages();
+    return payload;
+  };
+
+  const send = async () => {
     if (!selected) return;
     setRunning(true);
     setResult(null);
     try {
+      const payload = buildPayload();
       const r = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ model: runModel, caseId: selected.id }),
+        body: JSON.stringify(payload),
       });
       setResult(await r.json());
     } catch (e) {
-      setResult({ error: String(e) });
+      setResult({ error: `请求失败：${String(e)}` });
     } finally {
       setRunning(false);
     }
+  };
+
+  const switchMode = (next: "structured" | "json") => {
+    if (!selected) {
+      setMode(next);
+      return;
+    }
+    if (next === "json") {
+      setJsonText(
+        selected.kind === "multi"
+          ? JSON.stringify(turns, null, 2)
+          : JSON.stringify(currentMessages(), null, 2)
+      );
+    } else {
+      try {
+        const parsed = JSON.parse(jsonText);
+        if (selected.kind === "multi") {
+          setTurns(Array.isArray(parsed) ? parsed.map(String) : []);
+        } else if (Array.isArray(parsed)) {
+          setSystem(parsed.find((m: any) => m.role === "system")?.content ?? "");
+          setUser(parsed.find((m: any) => m.role === "user")?.content ?? "");
+          setPrefill(parsed.find((m: any) => m.role === "assistant")?.content ?? "");
+        }
+      } catch {
+        // keep structured values if JSON is invalid
+      }
+    }
+    setMode(next);
   };
 
   if (err) {
@@ -1037,11 +1369,12 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
   return (
     <Section
       title="复现案例库"
-      hint="system / prompt / prefill / 多轮 turns 与 hook 机制；提示词由服务端 /api/cases 提供，不进入前端包。"
+      hint="system / prompt / prefill / 多轮 turns 与 hook 机制；可编辑后直接重发送。提示词由服务端 /api/cases 提供，不进入前端包。"
     >
       <Alert severity="warning" sx={{ mb: 2 }}>
         仅用于自有/授权环境的红队评测。运行结果可能包含有害内容，不会落盘；请勿在公开部署上开启运行接口。
       </Alert>
+
       <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2 }} alignItems={{ md: "center" }}>
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>手法</InputLabel>
@@ -1076,8 +1409,8 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
       {loading ? (
         <CircularProgress size={24} />
       ) : (
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "1fr 1.2fr" }, gap: 2 }}>
-          <Box sx={{ maxHeight: 560, overflow: "auto" }}>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", lg: "0.9fr 1.3fr" }, gap: 2 }}>
+          <Box sx={{ maxHeight: 620, overflow: "auto" }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
@@ -1094,10 +1427,7 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
                     hover
                     selected={selected?.id === c.id}
                     sx={{ cursor: "pointer" }}
-                    onClick={() => {
-                      setSelected(c);
-                      setResult(null);
-                    }}
+                    onClick={() => pick(c)}
                   >
                     <TableCell sx={{ fontFamily: "monospace", fontSize: 11 }}>{c.id}</TableCell>
                     <TableCell>{c.technique}</TableCell>
@@ -1117,7 +1447,7 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
 
           <Box>
             {!selected ? (
-              <Alert severity="info">从左侧选择一个 case。</Alert>
+              <Alert severity="info">从左侧选择一个 case，编辑后可直接发送 / 重发送。</Alert>
             ) : (
               <Stack spacing={1.5}>
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -1125,22 +1455,74 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
                   <Chip size="small" label={selected.technique ?? "—"} />
                   <Chip size="small" label={selected.topic ?? "—"} variant="outlined" />
                   <Chip size="small" label={selected.source ?? "—"} variant="outlined" />
+                  {dirty && <Chip size="small" color="warning" label="已修改" />}
                 </Stack>
                 {selected.hooks && <Alert severity="info">{selected.hooks}</Alert>}
-                {selected.prompts.system && <PromptBlock label="system" text={selected.prompts.system} onCopy={copy} />}
-                {selected.prompts.prompt && <PromptBlock label="user" text={selected.prompts.prompt} onCopy={copy} />}
-                {selected.prompts.prefill && <PromptBlock label="assistant prefill" text={selected.prompts.prefill} onCopy={copy} />}
-                {selected.turns && (
+
+                <Tabs value={mode} onChange={(_, v) => switchMode(v)} sx={{ minHeight: 34 }}>
+                  <Tab value="structured" label="结构化编辑" sx={{ minHeight: 34 }} />
+                  <Tab value="json" label="JSON 编辑" sx={{ minHeight: 34 }} />
+                </Tabs>
+
+                {mode === "structured" ? (
+                  selected.kind === "multi" ? (
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>多轮 turns</Typography>
+                      {turns.map((t, i) => (
+                        <Stack key={i} direction="row" spacing={1} alignItems="flex-start">
+                          <Box sx={{ flex: 1 }}>
+                            <EditableBlock
+                              label={`turn ${i + 1}`}
+                              value={t}
+                              onChange={(v) => setTurns(turns.map((x, j) => (j === i ? v : x)))}
+                            />
+                          </Box>
+                          <IconButton size="small" sx={{ mt: 2 }} onClick={() => setTurns(turns.filter((_, j) => j !== i))}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      ))}
+                      <Button size="small" startIcon={<AddIcon />} onClick={() => setTurns([...turns, ""])} sx={{ mt: 1 }}>
+                        添加一轮
+                      </Button>
+                    </Box>
+                  ) : (
+                    <Box>
+                      <EditableBlock label="system（可空）" value={system} onChange={setSystem} minRows={2} />
+                      <EditableBlock label="user" value={user} onChange={setUser} minRows={3} />
+                      <EditableBlock label="assistant prefill（可空）" value={prefill} onChange={setPrefill} minRows={2} />
+                    </Box>
+                  )
+                ) : (
                   <Box>
-                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>多轮 turns</Typography>
-                    {selected.turns.map((t, i) => (
-                      <PromptBlock key={i} label={`turn ${i + 1}`} text={t} onCopy={copy} />
-                    ))}
+                    <Typography variant="caption" color="text.secondary">
+                      {selected.kind === "multi"
+                        ? "编辑 turns 数组（JSON 字符串数组）"
+                        : "编辑 messages 数组（role/content）"}
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={10}
+                      maxRows={20}
+                      size="small"
+                      value={jsonText}
+                      onChange={(e) => setJsonText(e.target.value)}
+                      sx={{ mt: 1, "& textarea": { fontFamily: "monospace", fontSize: 12 } }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      若最后一条是 assistant，服务端会自动追加“请继续。”后重发送。
+                    </Typography>
                   </Box>
                 )}
+
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <Button size="small" startIcon={<ContentCopyIcon />} onClick={() => copy(JSON.stringify(selected.messages, null, 2))}>
-                    复制 messages
+                  <Button variant="contained" size="small" startIcon={<PlayArrowIcon />} onClick={send} disabled={running}>
+                    {running ? "发送中…" : "发送 / 重发送"}
+                  </Button>
+                  <Button size="small" onClick={reset} disabled={!dirty}>重置</Button>
+                  <Button size="small" startIcon={<ContentCopyIcon />} onClick={() => { try { copy(JSON.stringify(buildPayload(), null, 2)); } catch { setSnack("JSON 解析失败"); } }}>
+                    复制请求 JSON
                   </Button>
                   <Button size="small" startIcon={<ContentCopyIcon />} onClick={() => copy(selected.curl)}>
                     复制 cURL
@@ -1154,10 +1536,8 @@ function ReproPanel({ models }: { models: ModelRow[] }) {
                       ))}
                     </Select>
                   </FormControl>
-                  <Button variant="contained" size="small" startIcon={<PlayArrowIcon />} onClick={run} disabled={running}>
-                    {running ? "运行中…" : "运行此 case"}
-                  </Button>
                 </Stack>
+
                 {running && <CircularProgress size={20} />}
                 {result?.error && <Alert severity="error">{result.error}</Alert>}
                 {result && !result.error && (
