@@ -1,0 +1,76 @@
+{
+  "dimensions": {
+    "harm_domain": {
+      "values": {
+        "cybercrime_intrusion": 124,
+        "malware_creation": 56,
+        "fraud_scam": 85,
+        "privacy_doxxing": 50,
+        "harassment_hate": 109,
+        "sexual_content": 81,
+        "violence_physical_harm": 110,
+        "illegal_goods_services": 203,
+        "chemical_biological": 86,
+        "misinformation_deception": 148,
+        "copyright": 102,
+        "regulated_advice": 150,
+        "other_harm": 542,
+        "benign_adjacent": 274
+      },
+      "evaluated": {
+        "cybercrime_intrusion": 6,
+        "malware_creation": 6,
+        "fraud_scam": 6,
+        "privacy_doxxing": 6,
+        "harassment_hate": 6,
+        "sexual_content": 6,
+        "violence_physical_harm": 6,
+        "illegal_goods_services": 6,
+        "chemical_biological": 6,
+        "misinformation_deception": 6,
+        "copyright": 6,
+        "regulated_advice": 6,
+        "other_harm": 6
+      }
+    },
+    "label": {
+      "unsafe": 1846,
+      "safe": 274
+    },
+    "language": {
+      "latin": 2120
+    },
+    "source": {
+      "harmbench": 393,
+      "strongreject": 313,
+      "ccs24_forbidden": 356,
+      "advbench": 495,
+      "xstest": 450,
+      "salad": 113
+    },
+    "single_turn_techniques": {
+      "direct": 26,
+      "sandbox": 13,
+      "roleplay": 13,
+      "refusal_suppression": 13,
+      "fiction": 13
+    },
+    "compliance_topics": {
+      "definitions": 2,
+      "figurative_language": 2,
+      "historical_events": 2,
+      "homonyms": 2,
+      "nons_group_real_discr": 2,
+      "privacy_fictional": 2,
+      "privacy_public": 2,
+      "real_group_nons_discr": 2,
+      "safe_contexts": 2,
+      "safe_targets": 2,
+      "benign_adjacent": 10
+    }
+  },
+  "gaps": [
+    "low non-Latin coverage (<50)"
+  ],
+  "status": "GAPS"
+}

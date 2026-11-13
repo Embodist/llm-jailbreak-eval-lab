@@ -1,0 +1,142 @@
+{
+  "total": 2120,
+  "core": 108,
+  "by_source": {
+    "advbench": 495,
+    "xstest": 450,
+    "harmbench": 393,
+    "ccs24_forbidden": 356,
+    "strongreject": 313,
+    "salad": 113
+  },
+  "by_master_category": {
+    "other_harm": 542,
+    "benign_adjacent": 274,
+    "illegal_goods_services": 203,
+    "regulated_advice": 150,
+    "misinformation_deception": 148,
+    "cybercrime_intrusion": 124,
+    "violence_physical_harm": 110,
+    "harassment_hate": 109,
+    "copyright": 102,
+    "chemical_biological": 86,
+    "fraud_scam": 85,
+    "sexual_content": 81,
+    "malware_creation": 56,
+    "privacy_doxxing": 50
+  },
+  "by_label": {
+    "unsafe": 1846,
+    "safe": 274
+  },
+  "by_risk": {
+    "mid": 1145,
+    "high": 368,
+    "critical": 333,
+    "low": 274
+  },
+  "sources": {
+    "harmbench": {
+      "repo": "centerforaisafety/HarmBench",
+      "n": 400,
+      "taxonomy": "3 functional x 7 semantic categories"
+    },
+    "strongreject": {
+      "repo": "alexandrasouly/strongreject",
+      "n": 313,
+      "taxonomy": "6 harm categories"
+    },
+    "ccs24_forbidden": {
+      "repo": "verazuo/jailbreak_llms",
+      "n": 390,
+      "taxonomy": "13 OpenAI-style content policies"
+    },
+    "advbench": {
+      "repo": "llm-attacks/llm-attacks",
+      "n": 520,
+      "taxonomy": "unlabelled harmful behaviours"
+    },
+    "xstest": {
+      "repo": "paul-rottger/xstest",
+      "n": 450,
+      "taxonomy": "250 safe / 200 unsafe; 18 contrast types"
+    },
+    "salad": {
+      "repo": "OpenSafetyLab/SALAD-Bench",
+      "n": 127,
+      "taxonomy": "0=unsafe, 1=safe (example slice)"
+    }
+  },
+  "master_taxonomy": [
+    {
+      "key": "cybercrime_intrusion",
+      "zh": "网络入侵",
+      "risk": "high"
+    },
+    {
+      "key": "malware_creation",
+      "zh": "恶意软件",
+      "risk": "critical"
+    },
+    {
+      "key": "fraud_scam",
+      "zh": "欺诈/经济",
+      "risk": "high"
+    },
+    {
+      "key": "privacy_doxxing",
+      "zh": "隐私/人肉",
+      "risk": "high"
+    },
+    {
+      "key": "harassment_hate",
+      "zh": "骚扰/仇恨",
+      "risk": "high"
+    },
+    {
+      "key": "sexual_content",
+      "zh": "性内容",
+      "risk": "critical"
+    },
+    {
+      "key": "violence_physical_harm",
+      "zh": "暴力/人身伤害",
+      "risk": "critical"
+    },
+    {
+      "key": "illegal_goods_services",
+      "zh": "非法商品/服务",
+      "risk": "mid"
+    },
+    {
+      "key": "chemical_biological",
+      "zh": "化生危险",
+      "risk": "critical"
+    },
+    {
+      "key": "misinformation_deception",
+      "zh": "虚假信息/欺骗",
+      "risk": "mid"
+    },
+    {
+      "key": "copyright",
+      "zh": "版权",
+      "risk": "mid"
+    },
+    {
+      "key": "regulated_advice",
+      "zh": "受监管建议",
+      "risk": "mid"
+    },
+    {
+      "key": "other_harm",
+      "zh": "其他有害",
+      "risk": "mid"
+    },
+    {
+      "key": "benign_adjacent",
+      "zh": "安全但敏感",
+      "risk": "low"
+    }
+  ]
+}

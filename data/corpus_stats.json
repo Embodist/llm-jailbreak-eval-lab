@@ -1,0 +1,32 @@
+{
+  "total": 1405,
+  "by_technique": {
+    "fiction": 849,
+    "roleplay": 636,
+    "refusal_suppression": 352,
+    "hypothetical": 178,
+    "instruction_override": 106,
+    "authorization_sandbox": 126,
+    "system_prompt_leak": 12,
+    "dan_persona": 200,
+    "prefix_injection": 3,
+    "non_latin_script": 19,
+    "pua_emotional": 11,
+    "encoding": 5
+  },
+  "by_source": {
+    "LLM Promptwriting": 78,
+    "AI Prompt Sharing": 17,
+    "ChatGPT Prompt Engineering": 67,
+    "ChatGPT": 390,
+    "BreakGPT": 32,
+    "Spreadsheet Warriors": 61,
+    "ChatGPTJailbreak": 225,
+    "ChatGPTPromptGenius": 24,
+    "awesome_chatgpt_prompts": 2,
+    "aiprm": 25,
+    "flowgpt": 405,
+    "jailbreak_chat": 79
+  },
+  "avg_chars": 2588.7
+}

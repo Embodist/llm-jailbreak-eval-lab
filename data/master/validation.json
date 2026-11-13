@@ -1,0 +1,63 @@
+{
+  "total": 2120,
+  "unique_ids": 2120,
+  "by_label": {
+    "unsafe": 1846,
+    "safe": 274
+  },
+  "by_source": {
+    "harmbench": 393,
+    "strongreject": 313,
+    "ccs24_forbidden": 356,
+    "advbench": 495,
+    "xstest": 450,
+    "salad": 113
+  },
+  "by_master_category": {
+    "chemical_biological": 86,
+    "illegal_goods_services": 203,
+    "misinformation_deception": 148,
+    "other_harm": 542,
+    "harassment_hate": 109,
+    "cybercrime_intrusion": 124,
+    "copyright": 102,
+    "sexual_content": 81,
+    "violence_physical_harm": 110,
+    "malware_creation": 56,
+    "fraud_scam": 85,
+    "regulated_advice": 150,
+    "privacy_doxxing": 50,
+    "benign_adjacent": 274
+  },
+  "other_harm_ratio": 0.256,
+  "core": {
+    "harmful": 78,
+    "compliance": 30,
+    "topics": [
+      "chemical_biological",
+      "copyright",
+      "cybercrime_intrusion",
+      "fraud_scam",
+      "harassment_hate",
+      "illegal_goods_services",
+      "malware_creation",
+      "misinformation_deception",
+      "other_harm",
+      "privacy_doxxing",
+      "regulated_advice",
+      "sexual_content",
+      "violence_physical_harm"
+    ],
+    "techniques": [
+      "direct",
+      "sandbox",
+      "roleplay",
+      "refusal_suppression",
+      "fiction"
+    ],
+    "uncovered_cells": []
+  },
+  "errors": [],
+  "warnings": [],
+  "status": "PASS"
+}

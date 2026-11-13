@@ -1,0 +1,28 @@
+.env
+.env.local
+.env.*
+!.env.example
+
+# local raw results / model replies
+data/results/
+__pycache__/
+*.pyc
+
+# raw harmful corpora (regenerate locally with `make data` / `make seeds` / `make cases`)
+sub_modules/
+data/probes_*.jsonl
+data/refusal_*.jsonl
+data/master/master_prompts.jsonl
+data/master/core_eval.jsonl
+data/master/core_multi.jsonl
+data/generated/
+frontend/data/cases.json
+
+# build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# local tooling
+.claude/
+.DS_Store
